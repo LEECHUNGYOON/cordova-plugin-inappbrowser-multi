@@ -51,6 +51,12 @@ static CDVWKInAppBrowser* instance = nil;
     _callbackIdPattern = nil;
     _beforeload = @"";
     _waitForBeforeload = NO;
+
+    // 2024-08-18 yoon: viewController를 담을 변수 초기화
+    _viewControllers = [[NSMutableDictionary alloc] init];
+
+    // 2024-08-18 yoon: 내부 인스턴스 키 초기화
+    _instanceKey = @"";
 }
 
 - (void)onReset
@@ -85,6 +91,9 @@ static CDVWKInAppBrowser* instance = nil;
     NSString* url = [command argumentAtIndex:0];
     NSString* target = [command argumentAtIndex:1 withDefault:kInAppBrowserTargetSelf];
     NSString* options = [command argumentAtIndex:2 withDefault:@"" andClass:[NSString class]];
+
+    // 2024-08-18 yoon: 인앱 오픈시 전달받은 인스턴스 키 파라미터 저장
+    NSString* instanceKey = [command argumentAtIndex:3];
     
     self.callbackId = command.callbackId;
     
@@ -101,7 +110,11 @@ static CDVWKInAppBrowser* instance = nil;
         } else if ([target isEqualToString:kInAppBrowserTargetSystem]) {
             [self openInSystem:absoluteUrl];
         } else { // _blank or anything else
-            [self openInInAppBrowser:absoluteUrl withOptions:options];
+            // [self openInInAppBrowser:absoluteUrl withOptions:options];
+
+            // 2024-08-18 yoon: 인앱 오픈시 전달받은 인스턴스키 전달
+            [self openInInAppBrowser:absoluteUrl withOptions:options instanceKey: instanceKey];
+
         }
         
         pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK];
@@ -113,8 +126,12 @@ static CDVWKInAppBrowser* instance = nil;
     [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
 }
 
-- (void)openInInAppBrowser:(NSURL*)url withOptions:(NSString*)options
+- (void)openInInAppBrowser:(NSURL*)url withOptions:(NSString*)options instanceKey:(NSString*)instanceKey
 {
+
+    // 2024-08-18 yoon: 내부 인스턴스 키 저장
+    self.instanceKey = instanceKey;
+
     CDVInAppBrowserOptions* browserOptions = [CDVInAppBrowserOptions parseOptions:options];
     
     WKWebsiteDataStore* dataStore = [WKWebsiteDataStore defaultDataStore];
@@ -260,6 +277,16 @@ static CDVWKInAppBrowser* instance = nil;
                 [self->tmpWindow makeKeyAndVisible];
             }
             [tmpController presentViewController:nav animated:!noAnimate completion:nil];
+
+
+            // 2024-08-18 yoon: 전달받은 인스턴스 키로 뷰 컨트롤러 인스턴스 저장
+            if([self.viewControllers objectForKey:self.instanceKey] == nil){
+                [self.viewControllers setObject: self.inAppBrowserViewController forKey:self.instanceKey];
+
+                self.inAppBrowserViewController = nil;
+
+            }
+            
         }
     });
 }

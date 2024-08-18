@@ -25,6 +25,19 @@
     const modulemapper = require('cordova/modulemapper');
     const urlutil = require('cordova/urlutil');
 
+    // 자리수 만큼 랜덤
+    function getRandomKey(length) {
+        let result = '';
+        const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+        const charactersLength = characters.length;
+        let counter = 0;
+        while (counter < length) {
+        result += characters.charAt(Math.floor(Math.random() * charactersLength));
+        counter += 1;
+        }
+        return result;
+    }
+
     function InAppBrowser () {
         this.channels = {
             beforeload: channel.create('beforeload'),
@@ -44,6 +57,9 @@
             volumedownbutton: channel.create('volumedownbutton')
             // 2023-12-28 yoon: volume up/down event 추가 --- END
         };
+
+        // 2024-08-18 yoon: 내부 인스턴스 키
+        this.instanceKey = getRandomKey(30);
     }
 
     InAppBrowser.prototype = {
@@ -126,7 +142,11 @@
 
         strWindowFeatures = strWindowFeatures || '';
 
-        exec(cb, cb, 'InAppBrowser', 'open', [strUrl, strWindowName, strWindowFeatures]);
+        // exec(cb, cb, 'InAppBrowser', 'open', [strUrl, strWindowName, strWindowFeatures]);
+
+        // 2024-08-18 yoon: open 시 내부 인스턴스 키를 던진다.
+        exec(cb, cb, 'InAppBrowser', 'open', [strUrl, strWindowName, strWindowFeatures, iab.instanceKey]);
+        
         return iab;
     };
 })();
