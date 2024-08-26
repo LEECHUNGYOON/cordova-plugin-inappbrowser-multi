@@ -81,6 +81,7 @@
 - (void)showToolBar:(BOOL)show : (NSString *) toolbarPosition;
 - (void)setCloseButtonTitle:(NSString*)title : (NSString*) colorString : (int) buttonIndex;
 
+// 2024-08-18 yoon: 뷰 컨트롤러 초기 생성시 인스턴스키 파라미터 추가
 - (id)initWithBrowserOptions: (CDVInAppBrowserOptions*) browserOptions andSettings:(NSDictionary*) settings instanceKey:(NSString*)instanceKey;
 
 @end
