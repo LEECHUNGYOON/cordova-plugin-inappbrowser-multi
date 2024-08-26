@@ -55,8 +55,6 @@ static CDVWKInAppBrowser* instance = nil;
     // 2024-08-18 yoon: viewController를 담을 변수 초기화
     _viewControllers = [[NSMutableDictionary alloc] init];
 
-    // 2024-08-18 yoon: 내부 인스턴스 키 초기화
-    _instanceKey = @"";
 }
 
 - (void)onReset
@@ -128,9 +126,6 @@ static CDVWKInAppBrowser* instance = nil;
 
 - (void)openInInAppBrowser:(NSURL*)url withOptions:(NSString*)options instanceKey:(NSString*)instanceKey
 {
-
-    // 2024-08-18 yoon: 내부 인스턴스 키 저장
-    self.instanceKey = instanceKey;
 
     CDVInAppBrowserOptions* browserOptions = [CDVInAppBrowserOptions parseOptions:options];
     
@@ -233,7 +228,16 @@ static CDVWKInAppBrowser* instance = nil;
 }
 
 - (void)show:(CDVInvokedUrlCommand*)command{
-    [self show:command withNoAnimate:NO];
+
+    // 2024-08-18 yoon: 전달받은 파라미터 중, instance Key를 받는다.
+    NSString* instanceKey = [command argumentAtIndex:0];
+
+    if(instanceKey != nil){
+        [self show:command withNoAnimate:NO instanceKey:instanceKey];
+    } else {
+        [self show:command withNoAnimate:NO];
+    }
+
 }
 
 - (void)show:(CDVInvokedUrlCommand*)command withNoAnimate:(BOOL)noAnimate
@@ -278,15 +282,61 @@ static CDVWKInAppBrowser* instance = nil;
             }
             [tmpController presentViewController:nav animated:!noAnimate completion:nil];
 
-
             // 2024-08-18 yoon: 전달받은 인스턴스 키로 뷰 컨트롤러 인스턴스 저장
-            if([self.viewControllers objectForKey:self.instanceKey] == nil){
-                [self.viewControllers setObject: self.inAppBrowserViewController forKey:self.instanceKey];
+            [self.viewControllers setObject: self.inAppBrowserViewController forKey: self.inAppBrowserViewController.instanceKey];
 
-                self.inAppBrowserViewController = nil;
-
-            }
+            self.inAppBrowserViewController = nil;        
             
+        }
+    });
+}
+
+// 2024-08-18 yoon: 전달받은 인스턴스 키에 해당하는 인앱을 실행한다.
+- (void)show:(CDVInvokedUrlCommand*)command withNoAnimate:(BOOL)noAnimate instanceKey:(NSString*)instanceKey
+{
+    BOOL initHidden = NO;
+    if(command == nil && noAnimate == YES){
+        initHidden = YES;
+    }
+
+    // 2024-08-18 yoon: instanceKey에 맞는 인앱 인스턴스를 구한다.
+    self.inAppBrowserViewController = [self.viewControllers objectForKey:instanceKey];
+    
+    if (self.inAppBrowserViewController == nil) {
+        NSLog(@"Tried to show IAB after it was closed.");
+        return;
+    }
+    
+    __block CDVInAppBrowserNavigationController* nav = [[CDVInAppBrowserNavigationController alloc]
+                                                        initWithRootViewController:self.inAppBrowserViewController];
+    nav.orientationDelegate = self.inAppBrowserViewController;
+    nav.navigationBarHidden = YES;
+    nav.modalPresentationStyle = self.inAppBrowserViewController.modalPresentationStyle;
+    nav.presentationController.delegate = self.inAppBrowserViewController;
+    
+    __weak CDVWKInAppBrowser* weakSelf = self;
+    
+    // Run later to avoid the "took a long time" log message.
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (weakSelf.inAppBrowserViewController != nil) {
+            float osVersion = [[[UIDevice currentDevice] systemVersion] floatValue];
+            __strong __typeof(weakSelf) strongSelf = weakSelf;
+            if (!strongSelf->tmpWindow) {
+                CGRect frame = [[UIScreen mainScreen] bounds];
+                if(initHidden && osVersion < 11){
+                   frame.origin.x = -10000;
+                }
+                strongSelf->tmpWindow = [[UIWindow alloc] initWithFrame:frame];
+            }
+            UIViewController *tmpController = [[UIViewController alloc] init];
+            [strongSelf->tmpWindow setRootViewController:tmpController];
+            [strongSelf->tmpWindow setWindowLevel:UIWindowLevelNormal];
+
+            if(!initHidden || osVersion < 11){
+                [self->tmpWindow makeKeyAndVisible];
+            }
+            [tmpController presentViewController:nav animated:!noAnimate completion:nil];            
+     
         }
     });
 }
@@ -659,12 +709,16 @@ static CDVWKInAppBrowser* instance = nil;
 CGFloat lastReducedStatusBarHeight = 0.0;
 BOOL isExiting = FALSE;
 
-- (id)initWithBrowserOptions: (CDVInAppBrowserOptions*) browserOptions andSettings:(NSDictionary *)settings
+- (id)initWithBrowserOptions: (CDVInAppBrowserOptions*) browserOptions andSettings:(NSDictionary *)settings instanceKey:(NSString*)instanceKey
 {
     self = [super init];
     if (self != nil) {
         _browserOptions = browserOptions;
         _settings = settings;
+
+        // 2024-08-18 yoon: 뷰 컨트롤러에 부여할 인스턴스 키 저장
+        self.instanceKey = instanceKey;
+        
         self.webViewUIDelegate = [[CDVWKInAppBrowserUIDelegate alloc] initWithTitle:[[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleDisplayName"]];
         [self.webViewUIDelegate setViewController:self];
         

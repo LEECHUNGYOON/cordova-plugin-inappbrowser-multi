@@ -39,18 +39,8 @@
 @property (nonatomic, copy) NSString* callbackId;
 @property (nonatomic, copy) NSRegularExpression *callbackIdPattern;
 
-/**************************************************************************
- * 2024-08-18 yoon: 여러개 인앱 인스턴스를 저장하기 위한 구조 정의 --- START
- **************************************************************************/
-// 인앱의 뷰컨트롤러를 여러개 저장하기 위한 변수
+// 2024-08-18 yoon: 인앱의 뷰컨트롤러를 여러개 저장하기 위한 변수
 @property (nonatomic, readwrite, strong) NSMutableDictionary* viewControllers;
-
-// 뷰 컨트롤러에 부여할 인스턴스 키
-@property (nonatomic, copy) NSString* instanceKey;
-
-/**************************************************************************
- * 2024-08-18 yoon: 여러개 인앱 인스턴스를 저장하기 위한 구조 정의 --- END
- **************************************************************************/
 
 + (id) getInstance;
 - (void)open:(CDVInvokedUrlCommand*)command;
@@ -81,6 +71,9 @@
 @property (nonatomic, weak) id <CDVScreenOrientationDelegate> orientationDelegate;
 @property (nonatomic, weak) CDVWKInAppBrowser* navigationDelegate;
 @property (nonatomic) NSURL* currentURL;
+
+// 2024-08-18 yoon: 뷰 컨트롤러에 부여할 인스턴스 키
+@property (nonatomic) NSString* instanceKey;
 
 - (void)close;
 - (void)navigateTo:(NSURL*)url;
