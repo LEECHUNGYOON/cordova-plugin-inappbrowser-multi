@@ -42,6 +42,12 @@
 // 2024-08-18 yoon: 인앱의 뷰컨트롤러를 여러개 저장하기 위한 변수
 @property (nonatomic, readwrite, strong) NSMutableDictionary* viewControllers;
 
+// 2024-08-27 yoon: 인앱별 콜백 ID를 저장하기 위한 변수
+@property (nonatomic, readwrite, strong) NSMutableDictionary* callbackIds;
+
+// 2024-08-27 yoon: 현재 실행 중인 뷰의 인스턴스 키
+@property (nonatomic, readwrite, strong) NSString* currentInstanceKey;
+
 + (id) getInstance;
 - (void)open:(CDVInvokedUrlCommand*)command;
 - (void)close:(CDVInvokedUrlCommand*)command;

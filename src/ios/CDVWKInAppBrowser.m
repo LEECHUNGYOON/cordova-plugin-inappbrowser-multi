@@ -55,6 +55,10 @@ static CDVWKInAppBrowser* instance = nil;
     // 2024-08-18 yoon: viewController를 담을 변수 초기화
     _viewControllers = [[NSMutableDictionary alloc] init];
 
+    // 2024-08-27 yoon: callbackId를 저장하는 변수 초기화
+    _callbackIds = [[NSMutableDictionary alloc] init];
+
+
 }
 
 - (void)onReset
@@ -92,6 +96,12 @@ static CDVWKInAppBrowser* instance = nil;
 
     // 2024-08-18 yoon: 인앱 오픈시 전달받은 인스턴스 키 파라미터 저장
     NSString* instanceKey = [command argumentAtIndex:3];
+
+    // 2024-08-27 yoon: 오픈 시 무조건 뷰 컨트롤러 초기화
+    self.inAppBrowserViewController = nil;
+    
+    // 2024-08-27 yoon: 현재 실행 중인 인스턴스 키 저장
+    self.currentInstanceKey = instanceKey;
     
     self.callbackId = command.callbackId;
     
@@ -164,6 +174,9 @@ static CDVWKInAppBrowser* instance = nil;
     }
 
     if (self.inAppBrowserViewController == nil) {
+        // self.inAppBrowserViewController = [[CDVWKInAppBrowserViewController alloc] initWithBrowserOptions: browserOptions andSettings:self.commandDelegate.settings];
+
+        // 2024-08-18 yoon: inappbrowser 초기 실행 시 instanceKey 값 전달 방식으로 변경
         self.inAppBrowserViewController = [[CDVWKInAppBrowserViewController alloc] initWithBrowserOptions: browserOptions andSettings:self.commandDelegate.settings instanceKey: instanceKey];
         self.inAppBrowserViewController.navigationDelegate = self;
         
@@ -235,11 +248,13 @@ static CDVWKInAppBrowser* instance = nil;
     if(instanceKey != nil){
         [self show:command withNoAnimate:NO instanceKey:instanceKey];
     } else {
+
+        // 최초 open 시 여기가 호출됨.
         [self show:command withNoAnimate:NO];
     }
 
 }
-
+// 최초 open 시 여기가 호출됨.
 - (void)show:(CDVInvokedUrlCommand*)command withNoAnimate:(BOOL)noAnimate
 {
     BOOL initHidden = NO;
@@ -283,9 +298,14 @@ static CDVWKInAppBrowser* instance = nil;
             [tmpController presentViewController:nav animated:!noAnimate completion:nil];
 
             // 2024-08-18 yoon: 전달받은 인스턴스 키로 뷰 컨트롤러 인스턴스 저장
-            [self.viewControllers setObject: self.inAppBrowserViewController forKey: self.inAppBrowserViewController.instanceKey];
+            [weakSelf.viewControllers setObject: weakSelf.inAppBrowserViewController forKey: weakSelf.inAppBrowserViewController.instanceKey];
 
-            self.inAppBrowserViewController = nil;        
+            // 2024-08-27 yoon: 뷰 컨트롤러 저장 시 callback Id도 저장한다.
+            [weakSelf.callbackIds setObject: weakSelf.callbackId forKey: weakSelf.inAppBrowserViewController.instanceKey];
+
+            // weakSelf.inAppBrowserViewController = nil;
+
+            // self.callbackId = nil;    
             
         }
     });
@@ -301,6 +321,12 @@ static CDVWKInAppBrowser* instance = nil;
 
     // 2024-08-18 yoon: instanceKey에 맞는 인앱 인스턴스를 구한다.
     self.inAppBrowserViewController = [self.viewControllers objectForKey:instanceKey];
+
+    // 2024-08-27 yoon: instanceKey에 맞는 callbackId를 구한다.
+    self.callbackId = [self.callbackIds objectForKey:instanceKey];
+
+    // 2024-08-27 yoon: 현재 실행 중인 인스턴스 키 저장
+    self.currentInstanceKey = instanceKey;
     
     if (self.inAppBrowserViewController == nil) {
         NSLog(@"Tried to show IAB after it was closed.");
@@ -348,11 +374,12 @@ static CDVWKInAppBrowser* instance = nil;
     self->tmpWindow.hidden = YES;
     self->tmpWindow = nil;
 
+    // 2024-08-28 yoon: 현재 실행 중인 인앱의 인스턴스 키를 지운다.    
+    self.currentInstanceKey = nil;
+
     if (self.inAppBrowserViewController == nil) {
         NSLog(@"Tried to hide IAB after it was closed.");
         return;
-        
-        
     }
     
     // Run later to avoid the "took a long time" log message.
@@ -615,6 +642,42 @@ static CDVWKInAppBrowser* instance = nil;
         NSString* messageContent = (NSString*) message.body;
         NSError* __autoreleasing error = nil;
         NSData* decodedResult = [NSJSONSerialization JSONObjectWithData:[messageContent dataUsingEncoding:NSUTF8StringEncoding] options:kNilOptions error:&error];
+
+        /***************************************************************************
+         * 2024-08-28 yoon: 인앱에서 PostMessage 전송 시 콜백 해줄 영역 찾기 --- Start
+         ***************************************************************************/
+        // 현재 실행 중인 인앱의 인스턴스 키
+        NSString* currentInstanceKey = (NSString*) self.currentInstanceKey;
+        if(currentInstanceKey == nil){
+            return;
+        }
+
+        // 전달받은 postMessage에 인스턴스 키 구하기
+        NSDictionary *decodedResultToDict = [NSJSONSerialization JSONObjectWithData:[messageContent dataUsingEncoding:NSUTF8StringEncoding] options:kNilOptions error:&error];
+        NSString* instanceKey = (NSString*) decodedResultToDict[@"instanceKey"];
+        if(instanceKey == nil){
+            return;
+        }
+        
+        // 전달받은 인스턴스 키에 대한 콜백 id 구하기
+        NSString* callbackId = (NSString*) [self.callbackIds objectForKey:instanceKey];
+        if(callbackId == nil){
+            return;
+        }
+
+        // 전달받은 postmessage가 현재 실행되고 있는 인앱의 키가 다르면 콜백 하지 않음.
+        // 인앱의 인스턴스 키가 다르다는건 숨겨진 인앱에서 postmessage를 전송했다는 의미임.
+        if(![currentInstanceKey isEqualToString:instanceKey]){
+            return;
+        }
+
+        // 전달받은 인스턴스 키에 대한 콜백 ID 지정하기
+        self.callbackId = callbackId;   
+
+        /***************************************************************************
+         * 2024-08-28 yoon: 인앱에서 PostMessage 전송 시 콜백 해줄 영역 찾기 --- End
+         ***************************************************************************/
+
         if (error == nil) {
             NSMutableDictionary* dResult = [NSMutableDictionary new];
             [dResult setValue:@"message" forKey:@"type"];
@@ -648,6 +711,36 @@ static CDVWKInAppBrowser* instance = nil;
         [pluginResult setKeepCallback:[NSNumber numberWithBool:YES]];
         
         [self.commandDelegate sendPluginResult:pluginResult callbackId:self.callbackId];
+
+        /******************************************************************************
+         * 2024-08-28 yoon: 화면이 정상적으로 로드가 완료되면, U4A 대표 오브젝트 생성 ---- Start
+         ******************************************************************************/
+        NSMutableString *cordovaU4A = [NSMutableString string];
+        
+        [cordovaU4A appendString: @"(function(){"];
+        [cordovaU4A appendString: @"'use strict';"];
+        [cordovaU4A appendString: @"if(typeof window === 'undefined'){ return; };"];
+        [cordovaU4A appendString: @"if(typeof window.cordovaU4A === 'undefined'){ window.cordovaU4A = {}; }"];
+        [cordovaU4A appendString: [NSString stringWithFormat:@"window.cordovaU4A.instanceKey='%@';", self.inAppBrowserViewController.instanceKey]];
+        [cordovaU4A appendString: @"window.cordovaU4A.postMessage = function(pJsonData){"];
+        [cordovaU4A appendString: @"if(!pJsonData){ return; }"];
+        [cordovaU4A appendString: @"if(typeof pJsonData !== 'string'){ return; }"];        
+        [cordovaU4A appendString: @"if(typeof window.webkit === 'undefined'){ return; }"];
+        [cordovaU4A appendString: @"if(typeof window.webkit.messageHandlers === 'undefined'){ return; }"];
+        [cordovaU4A appendString: @"if(typeof window.webkit.messageHandlers.cordova_iab === 'undefined'){ return; }"];
+        [cordovaU4A appendString: @"if(typeof webkit.messageHandlers.cordova_iab.postMessage !== 'function'){ return; }"];
+        [cordovaU4A appendString: @"try{ var oJsonData = JSON.parse(pJsonData);  } catch(error){ return; }"];
+        [cordovaU4A appendString: @"oJsonData.instanceKey = window.cordovaU4A.instanceKey;"];
+        [cordovaU4A appendString: @"webkit.messageHandlers.cordova_iab.postMessage(JSON.stringify(oJsonData));"];
+        [cordovaU4A appendString: @"};"];
+        [cordovaU4A appendString: @"})();"];        
+        
+        [self evaluateJavaScript:cordovaU4A];
+
+        /******************************************************************************
+         * 2024-08-28 yoon: 화면이 정상적으로 로드가 완료되면, U4A 대표 오브젝트 생성 ---- End
+         ******************************************************************************/
+
     }
 }
 
