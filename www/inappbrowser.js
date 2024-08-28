@@ -169,6 +169,4 @@ cordova.define("cordova-plugin-inappbrowser.inappbrowser", function(require, exp
         };
     })();
     
-    });
-
-    
+});    
