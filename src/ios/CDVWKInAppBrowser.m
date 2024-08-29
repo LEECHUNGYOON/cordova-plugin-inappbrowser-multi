@@ -104,7 +104,7 @@ static CDVWKInAppBrowser* instance = nil;
         NSLog(@"IAB.close() called but it was already closed.");
         return;
     }
-    
+
     // Things are cleaned up in browserExit.
     [self.inAppBrowserViewController close];
 }
@@ -116,6 +116,23 @@ static CDVWKInAppBrowser* instance = nil;
     }
     
     return NO;
+}
+
+// 2024-08-29 yoon: 인앱 이벤트 핸들러에서 backbutton을 호출 하기 위한 메소드
+- (void)inappBrowserBackbutton
+{
+
+    if(self.callbackId == nil){
+        return;
+    }
+
+    // Send a loadstart event for each top-level navigation (includes redirects).
+    CDVPluginResult* pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK
+                                                    messageAsDictionary:@{@"type":@"backbutton"}];
+    [pluginResult setKeepCallback:[NSNumber numberWithBool:YES]];
+    
+    [self.commandDelegate sendPluginResult:pluginResult callbackId:self.callbackId];
+
 }
 
 - (void)open:(CDVInvokedUrlCommand*)command
@@ -335,7 +352,7 @@ static CDVWKInAppBrowser* instance = nil;
 
             // 2024-08-27 yoon: 뷰 컨트롤러 저장 시 callback Id도 저장한다.
             [weakSelf.callbackIds setObject: weakSelf.callbackId forKey: weakSelf.inAppBrowserViewController.instanceKey];
-            
+
         }
     });
 }
@@ -762,15 +779,16 @@ static CDVWKInAppBrowser* instance = nil;
 
         /******************************************************************************
          * 2024-08-28 yoon: 화면이 정상적으로 로드가 완료되면, U4A 대표 오브젝트 생성 ---- Start
+         * !! 생성된 Object를 Object.freeze 하면 오류 발생되서 우선 제거함 !!
          ******************************************************************************/
         NSMutableString *cordovaU4A = [NSMutableString string];
-        
+
         [cordovaU4A appendString: @"(function(){"];
         [cordovaU4A appendString: @"'use strict';"];
         [cordovaU4A appendString: @"if(typeof window === 'undefined'){ return; };"];
-        [cordovaU4A appendString: @"if(typeof window.cordovaU4A === 'undefined'){ window.cordovaU4A = {}; Object.freeze(window.cordovaU4A);}"];        
+        [cordovaU4A appendString: @"if(typeof window.cordovaU4A === 'undefined'){ window.cordovaU4A = {}; /* Object.freeze(window.cordovaU4A); */}"];        
         [cordovaU4A appendString: [NSString stringWithFormat:@"window.cordovaU4A.instanceKey='%@';", self.inAppBrowserViewController.instanceKey]]; 
-        [cordovaU4A appendString: @"Object.freeze(window.cordovaU4A.instanceKey);"];       
+        [cordovaU4A appendString: @"/* Object.freeze(window.cordovaU4A.instanceKey); */"];       
         [cordovaU4A appendString: @"window.cordovaU4A.postMessage = function(pJsonData){"];
         [cordovaU4A appendString: @"if(!pJsonData){ return; }"];
         [cordovaU4A appendString: @"if(typeof pJsonData !== 'string'){ return; }"];        
@@ -782,7 +800,7 @@ static CDVWKInAppBrowser* instance = nil;
         [cordovaU4A appendString: @"oJsonData.instanceKey = window.cordovaU4A.instanceKey;"];
         [cordovaU4A appendString: @"webkit.messageHandlers.cordova_iab.postMessage(JSON.stringify(oJsonData));"];
         [cordovaU4A appendString: @"};"];
-        [cordovaU4A appendString: @"Object.freeze(window.cordovaU4A.postMessage);"];  
+        [cordovaU4A appendString: @"/* Object.freeze(window.cordovaU4A.postMessage); */"];  
         [cordovaU4A appendString: @"})();"];        
         
         [self evaluateJavaScript:cordovaU4A];
@@ -980,9 +998,11 @@ BOOL isExiting = FALSE;
     
     /**************************************************************
      * 2024-08-29 yoon: 기존의 close 버튼에 대한 이벤트를 Hide로 변경함
+     * @@ Hide로 변경했다가 인앱 이벤트 핸들러의 backbutton 이벤트를 호출하도록 변경함.
      **************************************************************/
     // self.closeButton = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemDone target:self action:@selector(close)];
-    self.closeButton = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemDone target:self action:@selector(hide)];
+    // self.closeButton = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemDone target:self action:@selector(hide)];
+    self.closeButton = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemDone target:self action:@selector(inappBrowserBackbutton)];
 
     self.closeButton.enabled = YES;
     
@@ -1095,17 +1115,20 @@ BOOL isExiting = FALSE;
     // the advantage of using UIBarButtonSystemItemDone is the system will localize it for you automatically
     // but, if you want to set this yourself, knock yourself out (we can't set the title for a system Done button, so we have to create a new one)
     self.closeButton = nil;
+    // Initialize with title if title is set, otherwise the title will be 'Done' localized
     
-    /**************************************************************
+    /**********************************************************************
      * 2024-08-29 yoon: 기존의 close 버튼에 대한 이벤트를 Hide로 변경함
-     **************************************************************/
+     * @@ Hide로 변경했다가 인앱 이벤트 핸들러의 backbutton 이벤트를 호출하도록 변경함.
+     **********************************************************************/
     // self.closeButton = title != nil ? [[UIBarButtonItem alloc] initWithTitle:title style:UIBarButtonItemStylePlain target:self action:@selector(close)] : [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemDone target:self action:@selector(close)];
-    self.closeButton = title != nil ? [[UIBarButtonItem alloc] initWithTitle:title style:UIBarButtonItemStylePlain target:self action:@selector(hide)] : [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemDone target:self action:@selector(hide)]; 
+    // self.closeButton = title != nil ? [[UIBarButtonItem alloc] initWithTitle:title style:UIBarButtonItemStylePlain target:self action:@selector(hide)] : [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemDone target:self action:@selector(hide)]; 
+    self.closeButton = title != nil ? [[UIBarButtonItem alloc] initWithTitle:title style:UIBarButtonItemStylePlain target:self action:@selector(inappBrowserBackbutton)] : [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemDone target:self action:@selector(inappBrowserBackbutton)]; 
 
     self.closeButton.enabled = YES;
     // If color on closebutton is requested then initialize with that that color, otherwise use initialize with default
     self.closeButton.tintColor = colorString != nil ? [self colorFromHexString:colorString] : [UIColor colorWithRed:60.0 / 255.0 green:136.0 / 255.0 blue:230.0 / 255.0 alpha:1];
-    
+
     NSMutableArray* items = [self.toolbar.items mutableCopy];
     [items replaceObjectAtIndex:buttonIndex withObject:self.closeButton];
     [self.toolbar setItems:items];
@@ -1274,9 +1297,22 @@ BOOL isExiting = FALSE;
 
 }
 
+/********************************************************************************
+ * 2024-08-29 yoon: 인앱의 이벤트 핸들러 중, backbutton 이벤트를 호출 하기 위한 메소드
+ * 이 메소드는 인앱 실행 시 툴바 영역에서 버튼을 눌렀을 경우에 호출되는 메소드 영역으로,
+ * 실제 backbutton 이벤트를 호출 하기 위해서는 CDVWKInAppBrowser 클래스의 backButton 메소드를
+ * 호출해야 해서 그 쪽으로 fire 함.
+ ********************************************************************************/
+- (void)inappBrowserBackbutton
+{
+
+    [self.navigationDelegate inappBrowserBackbutton];
+
+}
+
 - (void)close
 {
-    self.currentURL = nil;
+    self.currentURL = nil;    
     
     __weak UIViewController* weakSelf = self;
     

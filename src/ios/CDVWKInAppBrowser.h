@@ -56,6 +56,9 @@
 - (void)hide:(CDVInvokedUrlCommand*)command;
 - (void)loadAfterBeforeload:(CDVInvokedUrlCommand*)command;
 
+// 2024-08-29 yoon: 인앱 이벤트 핸들러에서 backbutton을 호출 하기 위한 메소드
+- (void)inappBrowserBackbutton;
+
 @end
 
 @interface CDVWKInAppBrowserViewController : UIViewController <CDVScreenOrientationDelegate,WKNavigationDelegate,WKUIDelegate,WKScriptMessageHandler,UIAdaptivePresentationControllerDelegate>{
@@ -83,6 +86,9 @@
 
 // 2024-08-29 yoon: 인앱 실행 후 닫기 버튼 선택시 호출 할 hide 메소드
 - (void)hide;
+
+// 2024-08-29 yoon: 인앱의 이벤트 핸들러 중, backbutton 이벤트를 호출하기 위한 메소드
+- (void)inappBrowserBackbutton;
 
 - (void)close;
 - (void)navigateTo:(NSURL*)url;
