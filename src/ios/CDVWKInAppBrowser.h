@@ -81,6 +81,9 @@
 // 2024-08-18 yoon: 뷰 컨트롤러에 부여할 인스턴스 키
 @property (nonatomic) NSString* instanceKey;
 
+// 2024-08-29 yoon: 인앱 실행 후 닫기 버튼 선택시 호출 할 hide 메소드
+- (void)hide;
+
 - (void)close;
 - (void)navigateTo:(NSURL*)url;
 - (void)showLocationBar:(BOOL)show;

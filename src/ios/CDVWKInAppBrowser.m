@@ -68,6 +68,38 @@ static CDVWKInAppBrowser* instance = nil;
 
 - (void)close:(CDVInvokedUrlCommand*)command
 {
+
+    /***************************************************************************
+     * 2024-08-28 yoon: 전달받은 인스턴스 키를 가지고 
+     * 기존에 저장했던 viewControllers, callbackIds 등을 삭제한다. --- Start
+     ***************************************************************************/
+
+    // close 명령어 수행 시, 전달받은 인스턴스 키를 구한다.
+    NSString* instanceKey = [command argumentAtIndex:0];
+    if(instanceKey != nil){
+
+        // 2024-08-28 yoon: 수집된 뷰 컨트롤러 구조에서 현재 인스턴스 키에 해당하는 오브젝트 삭제
+        [self.viewControllers removeObjectForKey:instanceKey];
+
+        // 2024-08-28 yoon: 수집된 콜백 ID 구조에서 현재 인스턴스 키에 해당하는 오브젝트 삭제
+        [self.callbackIds removeObjectForKey:instanceKey];
+        
+        // 2024-08-28 yoon: 현재 떠있는 화면의 인스턴스 키가 다르면 currentInstanceKey 삭제 및
+        // close 프로세스 수행을 하지 않음.
+        if(![self.currentInstanceKey isEqualToString:instanceKey]){
+            return;
+        }
+
+        // 2024-08-28 yoon: 현재 실행 중인 뷰의 인스턴스 키 초기화
+        self.currentInstanceKey = nil;
+
+    }
+
+    /***************************************************************************
+     * 2024-08-28 yoon: 전달받은 인스턴스 키를 가지고 
+     * 기존에 저장했던 viewControllers, callbackIds 등을 삭제한다. --- End
+     ***************************************************************************/
+
     if (self.inAppBrowserViewController == nil) {
         NSLog(@"IAB.close() called but it was already closed.");
         return;
@@ -254,6 +286,7 @@ static CDVWKInAppBrowser* instance = nil;
     }
 
 }
+
 // 최초 open 시 여기가 호출됨.
 - (void)show:(CDVInvokedUrlCommand*)command withNoAnimate:(BOOL)noAnimate
 {
@@ -302,10 +335,6 @@ static CDVWKInAppBrowser* instance = nil;
 
             // 2024-08-27 yoon: 뷰 컨트롤러 저장 시 callback Id도 저장한다.
             [weakSelf.callbackIds setObject: weakSelf.callbackId forKey: weakSelf.inAppBrowserViewController.instanceKey];
-
-            // weakSelf.inAppBrowserViewController = nil;
-
-            // self.callbackId = nil;    
             
         }
     });
@@ -314,6 +343,12 @@ static CDVWKInAppBrowser* instance = nil;
 // 2024-08-18 yoon: 전달받은 인스턴스 키에 해당하는 인앱을 실행한다.
 - (void)show:(CDVInvokedUrlCommand*)command withNoAnimate:(BOOL)noAnimate instanceKey:(NSString*)instanceKey
 {
+
+    // 2024-08-28 yoon: yoon전달받은 인스턴스키가 현재 떠있는 뷰의 인스턴스키가 같으면 이미 화면이 떠있는 상태이므로 하위로직 수행 안함.
+    if([self.currentInstanceKey isEqualToString:instanceKey]){
+        return;
+    }
+
     BOOL initHidden = NO;
     if(command == nil && noAnimate == YES){
         initHidden = YES;
@@ -322,16 +357,17 @@ static CDVWKInAppBrowser* instance = nil;
     // 2024-08-18 yoon: instanceKey에 맞는 인앱 인스턴스를 구한다.
     self.inAppBrowserViewController = [self.viewControllers objectForKey:instanceKey];
 
-    // 2024-08-27 yoon: instanceKey에 맞는 callbackId를 구한다.
-    self.callbackId = [self.callbackIds objectForKey:instanceKey];
-
-    // 2024-08-27 yoon: 현재 실행 중인 인스턴스 키 저장
-    self.currentInstanceKey = instanceKey;
-    
     if (self.inAppBrowserViewController == nil) {
         NSLog(@"Tried to show IAB after it was closed.");
         return;
     }
+
+    // 2024-08-27 yoon: instanceKey에 맞는 callbackId를 구한다.
+    self.callbackId = [self.callbackIds objectForKey:instanceKey];
+
+    // 2024-08-27 yoon: 현재 실행 중인 인스턴스 키 저장
+    self.currentInstanceKey = instanceKey;    
+   
     
     __block CDVInAppBrowserNavigationController* nav = [[CDVInAppBrowserNavigationController alloc]
                                                         initWithRootViewController:self.inAppBrowserViewController];
@@ -369,6 +405,18 @@ static CDVWKInAppBrowser* instance = nil;
 
 - (void)hide:(CDVInvokedUrlCommand*)command
 {
+    
+    // 2024-08-28 yoon: hide 명령어 수행 시, 전달받은 인스턴스 키를 구한다.
+    NSString* instanceKey = [command argumentAtIndex:0];
+    if(instanceKey == nil){
+        return;
+    }
+
+    // 2024-08-28 yoon: 현재 떠있는 화면의 인스턴스 키가 다르면 hide 수행 하지 않음
+    if(![self.currentInstanceKey isEqualToString:instanceKey]){
+        return;
+    }    
+    
     // Set tmpWindow to hidden to make main webview responsive to touch again
     // https://stackoverflow.com/questions/4544489/how-to-remove-a-uiwindow
     self->tmpWindow.hidden = YES;
@@ -720,8 +768,9 @@ static CDVWKInAppBrowser* instance = nil;
         [cordovaU4A appendString: @"(function(){"];
         [cordovaU4A appendString: @"'use strict';"];
         [cordovaU4A appendString: @"if(typeof window === 'undefined'){ return; };"];
-        [cordovaU4A appendString: @"if(typeof window.cordovaU4A === 'undefined'){ window.cordovaU4A = {}; }"];
-        [cordovaU4A appendString: [NSString stringWithFormat:@"window.cordovaU4A.instanceKey='%@';", self.inAppBrowserViewController.instanceKey]];
+        [cordovaU4A appendString: @"if(typeof window.cordovaU4A === 'undefined'){ window.cordovaU4A = {}; Object.freeze(window.cordovaU4A);}"];        
+        [cordovaU4A appendString: [NSString stringWithFormat:@"window.cordovaU4A.instanceKey='%@';", self.inAppBrowserViewController.instanceKey]]; 
+        [cordovaU4A appendString: @"Object.freeze(window.cordovaU4A.instanceKey);"];       
         [cordovaU4A appendString: @"window.cordovaU4A.postMessage = function(pJsonData){"];
         [cordovaU4A appendString: @"if(!pJsonData){ return; }"];
         [cordovaU4A appendString: @"if(typeof pJsonData !== 'string'){ return; }"];        
@@ -733,6 +782,7 @@ static CDVWKInAppBrowser* instance = nil;
         [cordovaU4A appendString: @"oJsonData.instanceKey = window.cordovaU4A.instanceKey;"];
         [cordovaU4A appendString: @"webkit.messageHandlers.cordova_iab.postMessage(JSON.stringify(oJsonData));"];
         [cordovaU4A appendString: @"};"];
+        [cordovaU4A appendString: @"Object.freeze(window.cordovaU4A.postMessage);"];  
         [cordovaU4A appendString: @"})();"];        
         
         [self evaluateJavaScript:cordovaU4A];
@@ -928,7 +978,12 @@ BOOL isExiting = FALSE;
     self.spinner.userInteractionEnabled = NO;
     [self.spinner stopAnimating];
     
-    self.closeButton = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemDone target:self action:@selector(close)];
+    /**************************************************************
+     * 2024-08-29 yoon: 기존의 close 버튼에 대한 이벤트를 Hide로 변경함
+     **************************************************************/
+    // self.closeButton = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemDone target:self action:@selector(close)];
+    self.closeButton = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemDone target:self action:@selector(hide)];
+
     self.closeButton.enabled = YES;
     
     UIBarButtonItem* flexibleSpaceButton = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil];
@@ -1040,8 +1095,13 @@ BOOL isExiting = FALSE;
     // the advantage of using UIBarButtonSystemItemDone is the system will localize it for you automatically
     // but, if you want to set this yourself, knock yourself out (we can't set the title for a system Done button, so we have to create a new one)
     self.closeButton = nil;
-    // Initialize with title if title is set, otherwise the title will be 'Done' localized
-    self.closeButton = title != nil ? [[UIBarButtonItem alloc] initWithTitle:title style:UIBarButtonItemStylePlain target:self action:@selector(close)] : [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemDone target:self action:@selector(close)];
+    
+    /**************************************************************
+     * 2024-08-29 yoon: 기존의 close 버튼에 대한 이벤트를 Hide로 변경함
+     **************************************************************/
+    // self.closeButton = title != nil ? [[UIBarButtonItem alloc] initWithTitle:title style:UIBarButtonItemStylePlain target:self action:@selector(close)] : [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemDone target:self action:@selector(close)];
+    self.closeButton = title != nil ? [[UIBarButtonItem alloc] initWithTitle:title style:UIBarButtonItemStylePlain target:self action:@selector(hide)] : [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemDone target:self action:@selector(hide)]; 
+
     self.closeButton.enabled = YES;
     // If color on closebutton is requested then initialize with that that color, otherwise use initialize with default
     self.closeButton.tintColor = colorString != nil ? [self colorFromHexString:colorString] : [UIColor colorWithRed:60.0 / 255.0 green:136.0 / 255.0 blue:230.0 / 255.0 alpha:1];
@@ -1195,6 +1255,23 @@ BOOL isExiting = FALSE;
 
 - (BOOL)prefersStatusBarHidden {
     return NO;
+}
+
+/********************************************************************************
+ * 2024-08-29 yoon: 인앱 브라우저에 나오는 기존 닫기 버튼 이벤트를 hide로 실행 하기 위한 메소드
+ * 기존에 쓰고있는 hide 메소드가 CDVWKInAppBrowser 클래스에 있는데,
+ * 인앱 실행 시 활성화 된 닫기 버튼은 CDVWKInAppBrowserViewController 클래스에는 hide 메소드가 없어서
+ * CDVWKInAppBrowser의 hide 메소드를 실행하게 함.
+ ********************************************************************************/
+- (void)hide
+{
+
+    NSArray *arguments = @[self.instanceKey];
+
+    CDVInvokedUrlCommand *command = [[CDVInvokedUrlCommand alloc] initWithArguments:arguments callbackId:nil className:nil methodName:nil];
+
+    [self.navigationDelegate hide: command];
+
 }
 
 - (void)close
