@@ -93,6 +93,12 @@ static CDVWKInAppBrowser* instance = nil;
         // 2024-08-28 yoon: 현재 실행 중인 뷰의 인스턴스 키 초기화
         self.currentInstanceKey = nil;
 
+        // 2024-08-28 yoon: 원래는 콜백 아이디도 삭제해야 하나, close 로직을 태우면
+        // Plugin에서 최종 browserExit 이벤트를 호출하게 되는데
+        // 거기서 현재 콜백 ID를 초기화 하는 로직이 있어서
+        // 여기서는 콜백ID 를 초기화 하지 않음.
+        // self.callbackId = nil;
+
     }
 
     /***************************************************************************
@@ -442,6 +448,9 @@ static CDVWKInAppBrowser* instance = nil;
     // 2024-08-28 yoon: 현재 실행 중인 인앱의 인스턴스 키를 지운다.    
     self.currentInstanceKey = nil;
 
+    // 2024-08-28 yoon: 콜백 Id 초기화
+    self.callbackId = nil;
+    
     if (self.inAppBrowserViewController == nil) {
         NSLog(@"Tried to hide IAB after it was closed.");
         return;

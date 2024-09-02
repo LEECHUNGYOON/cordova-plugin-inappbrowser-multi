@@ -41,6 +41,19 @@ public class InAppBrowserDialog extends Dialog {
     private boolean preventVolumeKeyEvent = false; // 볼륨 이벤트 전파 방지 여부
     // 2023-12-28 yoon: volume 이벤트 전파 방지를 위한 플래그 --- END
 
+    // 2024-09-02 yoon: 인앱 멀티로 실행 하기 위한 인스턴스 키 정보    
+    private String instanceKey;
+    
+
+    // 2024-09-02 yoon: InAppBrowserDialog 컨스트럭터에 instanceKey 추가
+    public InAppBrowserDialog(Context context, int theme, String instanceKey) {
+        super(context, theme);
+        this.context = context;
+   
+        this.instanceKey = instanceKey;
+
+    }
+
     public InAppBrowserDialog(Context context, int theme) {
         super(context, theme);
         this.context = context;

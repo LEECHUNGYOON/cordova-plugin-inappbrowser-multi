@@ -112,6 +112,24 @@ public class InAppBrowser extends CordovaPlugin {
     private static final String VOLUME_DOWN_BUTTON_EVENT = "volumedownbutton";       
     // 2023-12-28 yoon: volume up/down event 추가 관련 변수 --- END
 
+
+    /************************************************************************
+     * 2024-09-02 yoon: 인앱 멀티로 띄우기 위한 변수 및 객체 선언부 ---- Start
+     ************************************************************************/
+
+    // 현재 실행중인 인앱 인스턴스의 키를 저장할 변수
+    private static String currentInstanceKey;
+
+    // 인앱의 Dialog 객체를 여러개 저장하기 위한 변수
+    private final HashMap<String, Object> dialogsHashMap = new HashMap<>();
+
+    // 인앱별 콜백 객체를 저장하기 위한 변수
+    private final HashMap<String, Object> callbackContexts = new HashMap<>();
+
+    /************************************************************************
+     * 2024-09-02 yoon: 인앱 멀티로 띄우기 위한 변수 및 객체 선언부 ---- End
+     ************************************************************************/
+
     private static final String CLEAR_ALL_CACHE = "clearcache";
     private static final String CLEAR_SESSION_CACHE = "clearsessioncache";
     private static final String HARDWARE_BACK_BUTTON = "hardwareback";
@@ -183,6 +201,32 @@ public class InAppBrowser extends CordovaPlugin {
             final String target = t;
             final HashMap<String, String> features = parseFeature(args.optString(2));
 
+            /***********************************************************************
+             * 2024-09-02 yoon: 인앱 멀티로 띄우기 위한 로직 추가 ---- Start
+             ***********************************************************************/
+            
+            // 인앱 오픈시 전달받은 인스턴스 키 파라미터 저장
+            final String instanceKey = args.optString(3);
+            if(instanceKey == null || instanceKey.isEmpty() || instanceKey.equals(NULL)){
+                return false;
+            }
+
+            // 인앱이 이전에 실행된 적이 있다면 죽이고 새로운 인앱으로 실행
+            if(dialog != null){
+
+                dialog.dismiss();
+
+                dialog = null;
+
+            }
+
+            // 현재 실행 중인 인스턴스 키 저장
+            currentInstanceKey = instanceKey;
+
+            /***********************************************************************
+             * 2024-09-02 yoon: 인앱 멀티로 띄우기 위한 로직 추가 ---- End
+             ***********************************************************************/
+
             LOG.d(LOG_TAG, "target = " + target);
 
             this.cordova.getActivity().runOnUiThread(new Runnable() {
@@ -247,7 +291,7 @@ public class InAppBrowser extends CordovaPlugin {
                         // load in InAppBrowser
                         else {
                             LOG.d(LOG_TAG, "loading in InAppBrowser");
-                            result = showWebPage(url, features);
+                            result = showWebPage(url, features, "");
                         }
                     }
                     // SYSTEM
@@ -258,7 +302,11 @@ public class InAppBrowser extends CordovaPlugin {
                     // BLANK - or anything else
                     else {
                         LOG.d(LOG_TAG, "in blank");
-                        result = showWebPage(url, features);
+                        // result = showWebPage(url, features);
+
+                        // 2024-09-02 yoon: 인앱 오픈시 전달받은 인스턴스키 전달 
+                        result = showWebPage(url, features, instanceKey);
+
                     }
 
                     PluginResult pluginResult = new PluginResult(PluginResult.Status.OK, result);
@@ -268,6 +316,37 @@ public class InAppBrowser extends CordovaPlugin {
             });
         }
         else if (action.equals("close")) {
+
+            /***********************************************************************
+             * 2024-09-02 yoon: 인앱 멀티로 띄우기 위한 로직 추가 ---- Start
+             ***********************************************************************/
+
+            // 전달받은 인스턴스키 저장
+            final String instanceKey = args.optString(0);
+            if(instanceKey == null || instanceKey.isEmpty() || instanceKey.equals(NULL)){
+                return false;
+            }
+
+            // 수집된 Dialog HashMap에서 현재 인스턴스 키에 해당하는 Dialog 오브젝트 삭제
+            dialogsHashMap.remove(instanceKey);
+
+            // 수집된 callback HashMap에서 현재 인스턴스 키에 해당하는 callback 오브젝트 삭제
+            callbackContexts.remove(instanceKey);
+
+            // 현재 실행 중인 인앱 Dialog의 인스턴스 전달받은 인스턴스 키가 다르면,
+            // currentInstanceKey 삭제 및 close 프로세스 수행을 하지 않음.
+            if(currentInstanceKey != null && !currentInstanceKey.equals(instanceKey)){
+                return false;
+            }
+
+            // 현재 실행 중인 인앱 Dialog의 인스턴스 키와, 전달받은 인스턴스 키가 같을 경우에만
+            // 현재 인앱 Dialog의 인스턴스 키 값을 초기화 한다. 
+            currentInstanceKey = null;
+
+            /***********************************************************************
+             * 2024-09-02 yoon: 인앱 멀티로 띄우기 위한 로직 추가 ---- End
+             ***********************************************************************/
+
             closeDialog();
         }
         else if (action.equals("loadAfterBeforeload")) {
@@ -325,11 +404,69 @@ public class InAppBrowser extends CordovaPlugin {
             injectDeferredObject(args.getString(0), jsWrapper);
         }
         else if (action.equals("show")) {
+
+            /***********************************************************************
+             * 2024-09-02 yoon: 인앱 멀티로 띄우기 위한 로직 추가 ---- Start
+             ***********************************************************************/
+
+            // 전달받은 인스턴스키 저장
+            final String instanceKey = args.optString(0);
+            if(instanceKey == null || instanceKey.isEmpty() || instanceKey.equals(NULL)){
+                return false;
+            }
+
+            // 전달받은 인스턴스키가 현재 떠있는 인앱의 인스턴스키가 같으면 이미 화면이 떠있는 상태이므로 하위로직 수행 안함.
+            if(currentInstanceKey != null && currentInstanceKey.equals(instanceKey)){
+                return false;
+            }
+
+            // 전달받은 인스턴스 키에 맞는 인앱 Dialog 객체를 구한다.
+            InAppBrowserDialog mapDialog = (InAppBrowserDialog) dialogsHashMap.get(instanceKey);
+            if(mapDialog == null){
+                return false;
+            }            
+
+            // instanceKey에 맞는 callbackContext를 구한다.
+            CallbackContext mapCallbackContext = (CallbackContext) callbackContexts.get(instanceKey);
+            if(mapCallbackContext == null){
+                return false;
+            }         
+              
+            this.callbackContext = mapCallbackContext;
+
+            /***********************************************************************
+             * 2024-09-02 yoon: 인앱 멀티로 띄우기 위한 로직 추가 ---- End
+             ***********************************************************************/
+
+
             this.cordova.getActivity().runOnUiThread(new Runnable() {
                 @Override
                 public void run() {
+
+                    /***********************************************************************
+                     * 2024-09-02 yoon: 인앱 멀티로 띄우기 위한 로직 추가 ---- Start
+                     ***********************************************************************/
+                    
+                    // 이미 실행되고 있는 인앱이 있다면 해당 인앱은 숨겨놓는다.
+                    if(dialog != null){
+
+                        dialog.hide();
+
+                    }     
+
+                    dialog = mapDialog;
+
+                    /***********************************************************************
+                     * 2024-09-02 yoon: 인앱 멀티로 띄우기 위한 로직 추가 ---- End
+                     ***********************************************************************/
+
                     if (dialog != null && !cordova.getActivity().isFinishing()) {
+                        
                         dialog.show();
+
+                        // 2024-09-02 yoon: 현재 실행 중인 인앱의 인스턴스 키 저장
+                        currentInstanceKey = instanceKey; 
+
                     }
                 }
             });
@@ -338,6 +475,34 @@ public class InAppBrowser extends CordovaPlugin {
             this.callbackContext.sendPluginResult(pluginResult);
         }
         else if (action.equals("hide")) {
+
+            /***********************************************************************
+             * 2024-09-02 yoon: 인앱 멀티로 띄우기 위한 로직 추가 ---- Start
+             ***********************************************************************/
+
+            // 현재 실행 중인 인앱이 없으면 빠져나간다.
+            if(currentInstanceKey == null){
+                return false;
+            }
+
+            // 전달받은 인스턴스키 저장
+            final String instanceKey = args.optString(0);
+            if(instanceKey == null || instanceKey.isEmpty()){
+                return false;
+            }            
+
+            // 현재 떠있는 인앱의 키가 다르면 hide 수행 하지 않음            
+            if(currentInstanceKey != null && !currentInstanceKey.equals(instanceKey)){
+                return false;
+            }
+
+            // 현재 실행 중인 인앱의 인스턴스 키를 지운다.
+            currentInstanceKey = null;           
+
+            /***********************************************************************
+             * 2024-09-02 yoon: 인앱 멀티로 띄우기 위한 로직 추가 ---- End
+             ***********************************************************************/
+
             this.cordova.getActivity().runOnUiThread(new Runnable() {
                 @Override
                 public void run() {
@@ -349,6 +514,9 @@ public class InAppBrowser extends CordovaPlugin {
             PluginResult pluginResult = new PluginResult(PluginResult.Status.OK);
             pluginResult.setKeepCallback(true);
             this.callbackContext.sendPluginResult(pluginResult);
+
+            // 2024-09-02 yoon: Hide를 실행 할 경우 현재 실행 중인 인앱의 callbackContext도 지운다.
+            this.callbackContext = null;
         }
         else {
             return false;
@@ -700,8 +868,12 @@ public class InAppBrowser extends CordovaPlugin {
      *
      * @param url the url to load.
      * @param features jsonObject
+     * 
+     * // 2024-09-02 yoon:
+     * @param instanceKey 인앱 실행시 전달받은 인스턴스키도 받는다.
      */
-    public String showWebPage(final String url, HashMap<String, String> features) {
+    // public String showWebPage(final String url, HashMap<String, String> features) {
+    public String showWebPage(final String url, HashMap<String, String> features, final String instanceKey) {
         // Determine if we should hide the location bar.
         showLocationBar = true;
         showZoomControls = true;
@@ -860,7 +1032,11 @@ public class InAppBrowser extends CordovaPlugin {
                 };
 
                 // Let's create the main dialog
-                dialog = new InAppBrowserDialog(cordova.getActivity(), android.R.style.Theme_NoTitleBar);
+                // dialog = new InAppBrowserDialog(cordova.getActivity(), android.R.style.Theme_NoTitleBar);
+
+                // 2024-09-02 yoon: InappDialog 인스턴스 생성 시, constructor에 인스턴스 키 전달
+                dialog = new InAppBrowserDialog(cordova.getActivity(), android.R.style.Theme_NoTitleBar, instanceKey); 
+
                 dialog.getWindow().getAttributes().windowAnimations = android.R.style.Animation_Dialog;
                 dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
                 if (fullscreen) {
@@ -1062,7 +1238,11 @@ public class InAppBrowser extends CordovaPlugin {
                             JSONObject obj = new JSONObject();
                             obj.put("type", MESSAGE_EVENT);
                             obj.put("data", new JSONObject(data));
-                            sendUpdate(obj, true);
+
+                            // 2024-09-02 yoon: 인앱 멀티 기반에서의 PostMessage 전송 로직 수정
+                            // sendUpdate(obj, true);
+                            sendPostMessage(obj, true);
+
                         } catch (JSONException ex) {
                             LOG.e(LOG_TAG, "data object passed to postMessage has caused a JSON error.");
                         }
@@ -1181,6 +1361,21 @@ public class InAppBrowser extends CordovaPlugin {
                     dialog.setContentView(main);
                     dialog.show();
                     dialog.getWindow().setAttributes(lp);
+
+                    /***********************************************************************
+                     * 2024-09-02 yoon: 인앱 멀티로 띄우기 위한 로직 추가 ---- Start
+                     ***********************************************************************/
+
+                    // 전달받은 인스턴스 키로 Dialog 인스턴스 저장
+                    dialogsHashMap.put(instanceKey, dialog);
+
+                    // Dialog 인스턴스 시 callback 객체도 저장한다.
+                    callbackContexts.put(instanceKey, callbackContext);
+
+                    /***********************************************************************
+                     * 2024-09-02 yoon: 인앱 멀티로 띄우기 위한 로직 추가 ---- End
+                     ***********************************************************************/
+
                 }
                 // the goal of openhidden is to load the url and not display it
                 // Show() needs to be called to cause the URL to be loaded
@@ -1201,6 +1396,61 @@ public class InAppBrowser extends CordovaPlugin {
     private void sendUpdate(JSONObject obj, boolean keepCallback) {
         sendUpdate(obj, keepCallback, PluginResult.Status.OK);
     }
+
+    /***********************************************************************
+     * 2024-09-02 yoon: 인앱 멀티로 실행하는 컨셉에 대한 PostMessage
+     ***********************************************************************/
+    private void sendPostMessage(JSONObject obj, boolean keepCallback) {
+
+        // 현재 실행 중인 인앱이 없다면 빠져나간다.
+        if(currentInstanceKey == null){
+            return;
+        }
+
+        try{
+
+            // 전달받은 postMessage에 인스턴스 키 구하기
+            String msgData = obj.getString("data");
+
+            JSONObject jsonObject = new JSONObject(msgData);
+
+            String instanceKey = jsonObject.getString("instanceKey");
+
+            if(instanceKey.isEmpty() || instanceKey.equals(NULL)){
+                return;
+            }
+            
+            // 전달받은 postmessage가 현재 실행되고 있는 인앱의 키가 다르면 콜백 하지 않음.
+            // 인앱의 인스턴스 키가 다르다는건 숨겨진 인앱에서 postmessage를 전송했다는 의미임.
+            if(!currentInstanceKey.equals(instanceKey)){
+                return;
+            }
+
+            // 전달받은 인스턴스 키에 대한 콜백 callbackContext를 구한다            
+            CallbackContext mapCallbackContext = (CallbackContext) callbackContexts.get(instanceKey);
+            if(mapCallbackContext == null){
+                return;
+            }   
+
+            PluginResult result = new PluginResult(PluginResult.Status.OK, obj);
+            result.setKeepCallback(keepCallback);
+            
+            mapCallbackContext.sendPluginResult(result);
+            if (!keepCallback) {
+                callbackContext = null;
+            }
+            
+            LOG.e(LOG_TAG, instanceKey);
+
+
+        }
+        catch(Exception e){
+            LOG.e(LOG_TAG,e.getMessage());
+            return;
+        }
+
+    }
+
 
     /**
      * Create a new plugin result and send it back to JavaScript
@@ -1509,6 +1759,41 @@ public class InAppBrowser extends CordovaPlugin {
             } catch (JSONException ex) {
                 LOG.d(LOG_TAG, "Should never happen");
             }
+
+            /***********************************************************************
+             * 2024-09-02 yoon: 인앱 멀티로 띄우기 위한 로직 추가 ---- Start
+             ***********************************************************************/
+
+            // 화면이 정상적으로 로드가 완료되면, U4A 대표 오브젝트 생성
+            String cordovaU4A = "";
+
+            cordovaU4A += "(function(){";
+            cordovaU4A += "'use strict';";
+            cordovaU4A += "if(typeof window === 'undefined'){ return; };";
+            cordovaU4A += "if(typeof window.cordovaU4A === 'undefined'){ window.cordovaU4A = {}; /* Object.freeze(window.cordovaU4A); */}";            
+            cordovaU4A += String.format("window.cordovaU4A.instanceKey='%s';", currentInstanceKey);
+            cordovaU4A += "/* Object.freeze(window.cordovaU4A.instanceKey); */";
+            cordovaU4A += "window.cordovaU4A.postMessage = function(pJsonData){";
+            cordovaU4A += "if(!pJsonData){ return; }";
+            cordovaU4A += "if(typeof pJsonData !== 'string'){ return; }";
+            cordovaU4A += "if(typeof window.webkit === 'undefined'){ return; }";
+            cordovaU4A += "if(typeof window.webkit.messageHandlers === 'undefined'){ return; }";
+            cordovaU4A += "if(typeof window.webkit.messageHandlers.cordova_iab === 'undefined'){ return; }";
+            cordovaU4A += "if(typeof webkit.messageHandlers.cordova_iab.postMessage !== 'function'){ return; }";
+            cordovaU4A += "try{ var oJsonData = JSON.parse(pJsonData);  } catch(error){ return; }";
+            cordovaU4A += "oJsonData.instanceKey = window.cordovaU4A.instanceKey;";
+            cordovaU4A += "webkit.messageHandlers.cordova_iab.postMessage(JSON.stringify(oJsonData));";
+            cordovaU4A += "};";
+            cordovaU4A += "/* Object.freeze(window.cordovaU4A.postMessage); */";
+            cordovaU4A += "})();";
+
+            injectDeferredObject(cordovaU4A, null);
+
+
+            /***********************************************************************
+             * 2024-09-02 yoon: 인앱 멀티로 띄우기 위한 로직 추가 ---- End
+             ***********************************************************************/
+
         }
 
         public void onReceivedError(WebView view, int errorCode, String description, String failingUrl) {
